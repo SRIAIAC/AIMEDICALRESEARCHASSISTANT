@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320">
+  <g fill="none" stroke="#5b6472" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
+    <!-- pill capsule -->
+    <g transform="translate(28,34) rotate(-24)">
+      <rect x="0" y="0" width="46" height="20" rx="10" />
+      <line x1="23" y1="0" x2="23" y2="20" />
+    </g>
+
+    <!-- medical cross -->
+    <g transform="translate(220,26)">
+      <path d="M12 0 V28 M-2 14 H26" stroke-width="5" />
+    </g>
+
+    <!-- heartbeat / EKG line -->
+    <g transform="translate(150,90)">
+      <polyline points="0,14 20,14 27,-10 36,34 44,0 52,14 76,14" />
+    </g>
+
+    <!-- molecule -->
+    <g transform="translate(30,150)" fill="#5b6472" stroke="none">
+      <line x1="6" y1="6" x2="30" y2="-8" stroke="#5b6472" stroke-width="2.25" />
+      <line x1="6" y1="6" x2="30" y2="22" stroke="#5b6472" stroke-width="2.25" />
+      <line x1="30" y1="-8" x2="54" y2="6" stroke="#5b6472" stroke-width="2.25" />
+      <circle cx="6" cy="6" r="5" />
+      <circle cx="30" cy="-8" r="5" />
+      <circle cx="30" cy="22" r="5" />
+      <circle cx="54" cy="6" r="5" />
+    </g>
+
+    <!-- Rx prescription symbol -->
+    <text x="230" y="150" font-family="Georgia, 'Times New Roman', serif" font-size="46" stroke="none" fill="#5b6472">&#8478;</text>
+
+    <!-- DNA double helix -->
+    <g transform="translate(60,230)">
+      <path d="M0,0 C14,10 14,26 0,36 C-14,46 -14,62 0,72" />
+      <path d="M28,0 C14,10 14,26 28,36 C42,46 42,62 28,72" />
+      <line x1="2" y1="6" x2="26" y2="6" />
+      <line x1="-2" y1="20" x2="30" y2="20" />
+      <line x1="2" y1="52" x2="26" y2="52" />
+      <line x1="-2" y1="66" x2="30" y2="66" />
+    </g>
+
+    <!-- stethoscope -->
+    <g transform="translate(180,240)">
+      <path d="M0,0 V20 C0,34 12,34 12,20 V0" />
+      <path d="M12,20 V30 C12,42 30,42 30,30 V24" />
+      <circle cx="30" cy="20" r="5" />
+    </g>
+  </g>
+</svg>

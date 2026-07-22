@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Env files
+.env
+*.env.local
+.env.prod
+!.env.prod.example
+
+# Backend data
+backend/data/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Misc assets
+ChatGPT Image Jul 17, 2026, 01_10_02 PM.png

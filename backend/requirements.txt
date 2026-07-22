@@ -1,0 +1,28 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+pydantic-settings==2.5.2
+httpx==0.27.2
+sqlalchemy==2.0.35
+psycopg[binary]==3.2.2
+chromadb==0.5.5
+anthropic==0.34.2
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.9
+
+# Document ingestion (PDF text extraction + OCR fallback for scanned pages).
+# numpy/opencv-python are pinned so their versions stay compatible with
+# chromadb's numpy<2.0 requirement above.
+pymupdf==1.28.0
+rapidocr-onnxruntime==1.4.4
+numpy==1.26.4
+opencv-python==4.11.0.86
+
+pytest==8.3.3
+pytest-asyncio==0.24.0
+
+# Optional: install for production-quality biomedical embeddings
+# (EMBEDDING_PROVIDER=sentence_transformers). Not required for the
+# default hash-based embedder.
+# sentence-transformers==3.1.1

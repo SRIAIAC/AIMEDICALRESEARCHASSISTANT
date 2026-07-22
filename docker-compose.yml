@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: medresearch
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/medresearch
+      # "localhost" inside the container is the container itself — reach the
+      # host's `ollama serve` via Docker Desktop's special DNS name instead.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+    volumes:
+      - backend_chroma:/app/data/chroma
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked in at build time (Vite) — must be reachable from the
+        # *browser*, not the Docker network, hence localhost not `backend`.
+        VITE_BACKEND_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  backend_chroma:

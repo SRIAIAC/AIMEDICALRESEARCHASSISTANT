@@ -1,0 +1,74 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  # One-shot: pulls the two models the app needs, then exits. Runs on every
+  # `up`, but `ollama pull` is a no-op if the model is already present.
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["sh", "-c", "ollama pull llama3.2 && ollama pull nomic-embed-text"]
+    restart: "no"
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env.prod
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+    depends_on:
+      ollama-init:
+        condition: service_completed_successfully
+    volumes:
+      - backend_chroma:/app/data/chroma
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Empty on purpose: Caddy puts frontend and backend on the same
+        # origin (path-routed), so the browser can call a relative
+        # "/api/v1/..." URL instead of needing a separate absolute one.
+        VITE_BACKEND_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Set to a real domain (with DNS already pointed at this VM) in the
+      # shell/.env before `docker compose up` to get automatic HTTPS.
+      # Left unset, Caddy serves plain HTTP on port 80.
+      SITE_ADDRESS: "${SITE_ADDRESS:-:80}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  ollama_models:
+  backend_chroma:
+  caddy_data:
+  caddy_config:

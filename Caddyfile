@@ -1,0 +1,15 @@
+# SITE_ADDRESS is substituted by docker-compose (see docker-compose.prod.yml).
+# Leave it unset to serve plain HTTP on port 80 off the VM's raw IP; set it to
+# a real domain (with DNS already pointed at the VM) to get automatic HTTPS
+# for free, with no other config changes.
+{$SITE_ADDRESS} {
+    encode gzip
+
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    handle {
+        reverse_proxy frontend:3000
+    }
+}
