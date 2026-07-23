@@ -55,8 +55,11 @@ Review first and feeds its discovered PMIDs into the Citation Generator,
 fans the remaining specialist agents out concurrently, then runs Evidence
 Synthesis and Citation Verification over the combined results. Any agent
 that fails is recorded in `failed_agents` rather than failing the whole
-request. The frontend's Research Dashboard panel runs this full pipeline
-and can export the report as Markdown.
+request. Each finished report is saved to Postgres — `GET
+/api/v1/research/history` lists past reports and `GET
+/api/v1/research/{id}` fetches one in full, so a run survives a refresh.
+The frontend's Research Dashboard panel runs this full pipeline and can
+export the report as Markdown.
 
 The frontend gives each of the 12 standalone agents its own panel, plus a
 live medical-news feed and an interactive knowledge-graph explorer.
@@ -75,12 +78,15 @@ backend/                FastAPI application
                          knowledge_graph, paper_analysis, interactions, comparative,
                          rag_tool
     core/config.py       Environment-driven settings (pydantic-settings)
-    db/session.py        SQLAlchemy/Postgres session — configured but unused
-    models/schemas.py    Pydantic request/response models
+    db/session.py        SQLAlchemy/Postgres engine, session, get_db
+    models/
+      schemas.py          Pydantic request/response models
+      orm.py              ResearchReportORM — persisted research reports
     services/            LLM client, embeddings, vector store, citation
                          formatting, external API clients (PubMed,
                          ClinicalTrials.gov, openFDA, RxNav, ChEMBL, WHO RSS,
                          Wikipedia/DuckDuckGo), PDF/OCR ingestion, TTL cache
+  alembic/                Migrations (run automatically by the Dockerfile)
   tests/
   requirements.txt
   Dockerfile
@@ -94,9 +100,11 @@ frontend/                Vite + React dashboard
 
 docker-compose.yml        Local dev: backend + frontend + postgres (expects
                           `ollama serve` on the host)
-docker-compose.prod.yml   Self-contained prod stack: + ollama + Caddy, no host deps
+docker-compose.prod.yml   Self-contained prod stack: + ollama + postgres + Caddy, no host deps
 Caddyfile                 Reverse proxy / TLS config for the prod stack
-.github/workflows/ci.yml  CI: backend tests, frontend build
+.github/workflows/ci.yml  CI (backend tests, frontend build) + CD (auto-
+                          redeploys the live VM on main, gated by a manual
+                          approval — see DEPLOY.md)
 ARCHITECTURE.md           Deep-dive: diagrams, subsystem details, limitations
 DEPLOY.md                 How the live deployment is run, redeployed, and torn down
 ```
@@ -110,6 +118,9 @@ cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+# Postgres must be reachable at DATABASE_URL (see .env.example) — e.g.
+# `docker run -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16-alpine`
+alembic upgrade head
 ollama serve &   # if not already running
 ollama pull llama3.2
 ollama pull nomic-embed-text
@@ -144,8 +155,8 @@ This expects `ollama serve` running on your host (reached via
 
 ## Known limitations
 
-No authentication, no persisted report storage (results are lost on
-refresh — `db/session.py` is configured but no route uses it), and the
-default embedder/LLM are local Ollama models rather than a
-production-tuned biomedical model. Full list with rationale in
+No authentication; persistence covers research reports only (the 12
+standalone agent panels still don't save anything); and the default
+embedder/LLM are local Ollama models rather than a production-tuned
+biomedical model. Full list with rationale in
 [ARCHITECTURE.md §16](ARCHITECTURE.md#16-known-limitations).

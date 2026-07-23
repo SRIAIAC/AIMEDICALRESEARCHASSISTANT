@@ -1,4 +1,19 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: medresearch
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
@@ -30,9 +45,12 @@ services:
       - ./backend/.env.prod
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/medresearch
     depends_on:
       ollama-init:
         condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     volumes:
       - backend_chroma:/app/data/chroma
 
@@ -70,5 +88,6 @@ services:
 volumes:
   ollama_models:
   backend_chroma:
+  postgres_data:
   caddy_data:
   caddy_config:

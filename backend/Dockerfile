@@ -15,6 +15,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini .
 
 RUN useradd --create-home --uid 1000 appuser \
     && mkdir -p /app/data/chroma \
@@ -26,4 +28,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -fsS http://localhost:8000/api/v1/health || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Runs pending migrations against DATABASE_URL before the app starts, so a
+# fresh Postgres (or a schema change on redeploy) is up to date automatically.
+CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000

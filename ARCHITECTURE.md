@@ -26,7 +26,7 @@ flowchart LR
     Agents --> Ollama["Ollama (local)\nLLM + embeddings"]
     Agents --> ExtAPIs["External APIs\nPubMed · CT.gov · openFDA · RxNav\nChEMBL · WHO · Wikipedia · DuckDuckGo"]
     Agents --> Chroma[(Chroma\nvector store)]
-    BE -.configured, not wired.-> Postgres[(Postgres)]
+    BE -->|persists\nresearch reports| Postgres[(Postgres)]
 ```
 
 Sections 2–14 below each expand one box from this diagram.
@@ -140,8 +140,12 @@ backend/app/
     pdf_ingestion.py         PyMuPDF text extraction + RapidOCR fallback
     news.py                  WHO RSS + PubMed recency search, 15-min cache
     cache.py                 Generic in-process TTL cache
-  models/schemas.py          Pydantic request/response models
-  db/session.py               SQLAlchemy engine/session — configured but unused
+  models/
+    schemas.py               Pydantic request/response models
+    orm.py                   ResearchReportORM — the one persisted table
+  db/session.py               SQLAlchemy engine/session/get_db + Base
+  ../alembic/                 Migrations (alembic upgrade head, run
+                              automatically by the Dockerfile's CMD)
 ```
 
 ## 4. The agents
@@ -184,7 +188,8 @@ flowchart TD
     Gather -->|any agent raised| Failed["Recorded in failed_agents,\nrest of report still returned"]
     Gather --> ES["Evidence Synthesis\n(condensed specialist output → LLM)"]
     ES --> CV["Citation Verification\n(synthesis claims vs. actual sources → LLM)"]
-    CV --> Report["ResearchReportResponse:\nagents + evidence_synthesis +\ncitation_verification + failed_agents"]
+    CV --> Persist[("Persist to Postgres\nresearch_reports")]
+    Persist --> Report["ResearchReportResponse:\nid + agents + evidence_synthesis +\ncitation_verification + failed_agents"]
 ```
 
 `orchestrator.py` (`ResearchPlanner`, behind `/api/v1/research`, with a
@@ -208,6 +213,17 @@ Any specialist agent (or either pipeline stage) that raises is caught and
 recorded in `failed_agents` rather than failing the whole request —
 verified with a deliberately-failing agent: the other agents' results and
 both pipeline stages still came back.
+
+The finished report is saved as a `research_reports` row (`app/models/orm.py`,
+table created by Alembic — `backend/alembic/versions/`) before the response
+is returned, so it survives a page refresh or server restart; this is the
+only endpoint that persists anything (see §16). `GET /api/v1/research/history`
+lists the most recent reports (id, query, timestamp) and
+`GET /api/v1/research/{id}` fetches one in full — both read straight from
+Postgres, no cache involved. The persist step lives inside the same
+in-process TTL-cached closure as the orchestrator run itself, so a repeat
+request for the same query within the cache window returns the original
+row's id rather than writing a duplicate.
 
 ## 5. Document ingestion & Q&A (RAG)
 
@@ -470,9 +486,13 @@ time (Vite), not read at container runtime.
 
 ## 16. Known limitations
 
-- **No persistence** — `db/session.py` configures a SQLAlchemy engine and
-  `DATABASE_URL` points at Postgres, but there are no ORM models and no
-  route uses the `get_db()` dependency. Every result is lost on refresh.
+- **Persistence covers research reports only** — `/api/v1/research` saves
+  each run to Postgres (`research_reports`, via `ResearchReportORM` +
+  Alembic migrations) and exposes `/research/history` and `/research/{id}`
+  to read them back. The 12 standalone agent panels (Drug Discovery,
+  Safety, Knowledge Graph, etc.) still don't persist anything — only their
+  results feed into an orchestrator run get saved, and only via that one
+  endpoint. A refresh loses a standalone panel's result same as before.
 - **No authentication** — `JWT_SECRET_KEY` is configured but unused; every
   endpoint is open.
 - **Cache is in-process memory** — resets on restart, not shared across
@@ -486,8 +506,9 @@ time (Vite), not read at container runtime.
   check** — it catches clearly unsupported claims (verified live) but isn't
   a substitute for a human checking the underlying sources.
 - **No research trend / competitive intelligence** — deliberately not
-  built yet; it inherently needs time-series data, which is blocked on the
-  "no persistence" gap above rather than being a separate missing feature.
+  built yet. `research_reports` now accumulates the time-series data this
+  would need, but no endpoint or frontend view aggregates across reports
+  yet — it's a separate missing feature now, not blocked on persistence.
 - **Drug-Drug Interaction Checker is a label text cross-reference, not a
   dedicated interaction database** — RxNav's structured interaction API is
   confirmed discontinued by NLM (`404`), and there's no other free, no-key
@@ -516,17 +537,20 @@ flowchart LR
     Caddy -->|"everything else"| Frontend["frontend container\n(nginx, static React build)"]
     Backend --> Ollama["ollama container\n(llama3.2 + nomic-embed-text,\npersistent model volume)"]
     Backend --> ChromaVol[("backend_chroma\nvolume")]
+    Backend --> PgVol[("postgres_data\nvolume")]
 ```
 
 `docker-compose.prod.yml` (distinct from the plain `docker-compose.yml`
 used for local dev, which expects `ollama serve` on the host machine) runs
 the whole stack self-contained: Ollama as its own container rather than a
 host dependency, a one-shot `ollama-init` service that pulls both models
-on first boot (a no-op on every boot after), and Caddy as the single public
-entry point so the frontend and backend share one origin — the browser
-only ever calls a relative `/api/v1/...` path, so CORS doesn't come into
-play in normal use. Postgres isn't part of the prod stack since nothing in
-the app actually uses it yet (see the limitation above).
+on first boot (a no-op on every boot after), a `postgres` container the
+backend depends on (`condition: service_healthy`) for the research-report
+table, and Caddy as the single public entry point so the frontend and
+backend share one origin — the browser only ever calls a relative
+`/api/v1/...` path, so CORS doesn't come into play in normal use. The
+backend's Docker `CMD` runs `alembic upgrade head` before starting
+`uvicorn`, so schema changes apply automatically on redeploy.
 
 Deployed to a standalone Google Cloud project (isolated from any other
 project on the account) via a single Compute Engine VM — no managed

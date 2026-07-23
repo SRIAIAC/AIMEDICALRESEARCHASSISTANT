@@ -1,9 +1,16 @@
-name: CI
+name: CI/CD
 
 on:
   push:
     branches: [main]
   pull_request:
+
+# Only one deploy (and one CI run per branch) in flight at a time - a second
+# push to main while a deploy is running cancels the stale one rather than
+# racing it onto the VM.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend:
@@ -33,3 +40,45 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run build
+
+  # Redeploys the live VM (see DEPLOY.md) with whatever just passed CI on
+  # main. Requires the `production` GitHub Environment to exist (Settings ->
+  # Environments) with required reviewers configured there - the job pauses
+  # for approval before it touches the VM. Also requires the GCP_SA_KEY
+  # secret (see DEPLOY.md's "Continuous deployment" section for how to
+  # create the service account and grant it the two roles this needs).
+  deploy:
+    needs: [backend, frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      GCP_PROJECT: ai-medresearch-7569
+      GCP_ZONE: us-central1-a
+      GCP_VM: medresearch-vm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Package deploy artifact
+        run: tar -czf /tmp/medresearch-deploy.tar.gz backend frontend Caddyfile docker-compose.prod.yml
+
+      - name: Copy artifact to VM
+        run: |
+          gcloud compute scp /tmp/medresearch-deploy.tar.gz "$GCP_VM:medresearch-deploy.tar.gz" \
+            --project="$GCP_PROJECT" --zone="$GCP_ZONE"
+
+      - name: Extract and restart the stack
+        run: |
+          gcloud compute ssh "$GCP_VM" --project="$GCP_PROJECT" --zone="$GCP_ZONE" --command="
+            rm -rf ~/medresearch-new && mkdir ~/medresearch-new &&
+            tar -xzf ~/medresearch-deploy.tar.gz -C ~/medresearch-new &&
+            cp ~/medresearch/backend/.env.prod ~/medresearch-new/backend/.env.prod &&
+            rm -rf ~/medresearch && mv ~/medresearch-new ~/medresearch &&
+            cd ~/medresearch && sudo docker compose -f docker-compose.prod.yml up -d --build
+          "

@@ -11,19 +11,77 @@ VM running the full stack via `docker-compose.prod.yml`.
 | VM | `medresearch-vm`, zone `us-central1-a`, `e2-standard-2` (2 vCPU / 8GB RAM), 50GB disk |
 | Static IP | `34.44.85.232` (reserved — survives VM restarts) |
 | Firewall | `allow-http-https` (80/443, tag `web`) + GCP's default SSH rule |
-| Containers | `ollama`, `backend` (FastAPI), `frontend` (nginx serving the React build), `caddy` (reverse proxy on 80/443) |
+| Containers | `postgres`, `ollama`, `backend` (FastAPI), `frontend` (nginx serving the React build), `caddy` (reverse proxy on 80/443) |
 
 Caddy path-routes `/api/*` to the backend and everything else to the
 frontend, so the browser only ever talks to one origin — no CORS involved
 in normal use. Ollama runs as its own container with a persistent volume
 (`ollama_models`) holding the pulled `llama3.2` and `nomic-embed-text`
-weights, so they aren't re-downloaded on restart. Postgres is **not**
-deployed — the app doesn't use it yet (`db/session.py` is unwired; see
-ARCHITECTURE.md §16).
+weights, so they aren't re-downloaded on restart. Postgres persists
+research reports (`/api/v1/research`'s history) in a `postgres_data`
+volume; the backend container runs `alembic upgrade head` on startup, so
+the schema is created/updated automatically — no manual migration step on
+this VM. Every other agent endpoint is still request/response only, no
+persistence (see ARCHITECTURE.md §16).
 
-## Redeploying after a code change
+## Continuous deployment (GitHub Actions)
 
-From your machine, in the project root:
+Every push to `main` runs `.github/workflows/ci.yml`: backend tests +
+frontend build, then (only if both pass) a `deploy` job that packages and
+redeploys this same VM — the automated version of the manual steps below.
+The deploy job sits behind a `production` GitHub Environment, so it pauses
+for a manual approval click in the Actions UI before it touches anything;
+CI on pull requests never reaches this job (`if: github.ref == 'refs/heads/main'`).
+
+One-time setup (do this once, from a machine with `gcloud` already
+authenticated to the `ai-medresearch-7569` project):
+
+1. **Create a deploy-only service account** and grant it just enough to
+   push files and run `docker compose` over SSH — no broader project access:
+   ```bash
+   gcloud iam service-accounts create gh-actions-deploy \
+     --project=ai-medresearch-7569 --display-name="GitHub Actions deploy"
+
+   gcloud projects add-iam-policy-binding ai-medresearch-7569 \
+     --member="serviceAccount:gh-actions-deploy@ai-medresearch-7569.iam.gserviceaccount.com" \
+     --role="roles/compute.instanceAdmin.v1"
+
+   gcloud projects add-iam-policy-binding ai-medresearch-7569 \
+     --member="serviceAccount:gh-actions-deploy@ai-medresearch-7569.iam.gserviceaccount.com" \
+     --role="roles/iam.serviceAccountUser"
+   ```
+   (`compute.instanceAdmin.v1` is what lets `gcloud compute ssh`/`scp` push
+   an ephemeral SSH key to the VM's metadata and connect — the same
+   mechanism the manual flow below relies on.)
+
+2. **Create and download a key** for that service account:
+   ```bash
+   gcloud iam service-accounts keys create gh-actions-deploy-key.json \
+     --iam-account=gh-actions-deploy@ai-medresearch-7569.iam.gserviceaccount.com
+   ```
+   Treat this file like a password — it's a standing credential. Delete it
+   locally once it's in GitHub (step 3), and rotate it
+   (`gcloud iam service-accounts keys create/delete`) if it's ever exposed.
+
+3. **Add it as a repo secret**: GitHub repo → Settings → Secrets and
+   variables → Actions → New repository secret → name it `GCP_SA_KEY`,
+   paste the entire contents of `gh-actions-deploy-key.json` as the value.
+
+4. **Create the `production` environment**: Settings → Environments → New
+   environment → name it exactly `production` → add yourself (or whoever
+   should approve prod deploys) under "Required reviewers". Without this,
+   referencing `environment: production` in the workflow still works, but
+   with no protection rule the job runs immediately on every push to main —
+   the reviewer step is what makes deploys pause for approval.
+
+After that, deploying is just: merge to `main`, wait for the `backend` and
+`frontend` checks, then approve the `deploy` job when GitHub prompts.
+
+## Redeploying manually (fallback / for local testing)
+
+The steps CI automates above, if you'd rather run them yourself — e.g. to
+test a change before it's on `main`, or if Actions is down. From your
+machine, in the project root:
 
 ```bash
 tar -czf /tmp/medresearch-deploy.tar.gz \

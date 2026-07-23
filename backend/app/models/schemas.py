@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -9,11 +10,24 @@ class ResearchQueryRequest(BaseModel):
 
 
 class ResearchReportResponse(BaseModel):
+    id: str | None = None
     query: str
     agents: dict[str, Any]
     evidence_synthesis: dict[str, Any] | None = None
     citation_verification: dict[str, Any] | None = None
     failed_agents: dict[str, str] = Field(default_factory=dict)
+    created_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class ResearchReportSummary(BaseModel):
+    id: str
+    query: str
+    created_at: datetime
+    failed_agents: dict[str, str] = Field(default_factory=dict)
+
+    model_config = {"from_attributes": True}
 
 
 class LiteratureSearchRequest(BaseModel):
