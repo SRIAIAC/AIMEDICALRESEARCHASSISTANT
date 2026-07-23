@@ -20,7 +20,7 @@ one big diagram, so each part can be read on its own.
 ```mermaid
 flowchart LR
     User([Researcher]) --> FE["Frontend\nVite + React (:3000)"]
-    FE -->|HTTP + CORS| BE["Backend\nFastAPI (:8010)"]
+    FE -->|HTTP + CORS| BE["Backend\nFastAPI (:8000)"]
     BE --> Cache[(In-process\nTTL cache)]
     BE --> Agents["14 Agents +\nOrchestrator\n(+ 2 pipeline-only stages)"]
     Agents --> Ollama["Ollama (local)\nLLM + embeddings"]

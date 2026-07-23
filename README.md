@@ -2,82 +2,103 @@
 
 A multi-agent AI platform that helps pharmaceutical, biotech, and clinical
 research teams gather, analyze, and synthesize information from PubMed,
-ClinicalTrials.gov, FDA/OpenFDA, and drug databases.
+ClinicalTrials.gov, FDA/openFDA, RxNav, ChEMBL, Wikipedia, and DuckDuckGo.
 
-All 5 agents are wired to real data sources and an LLM:
+Live demo: **http://34.44.85.232/** (see [DEPLOY.md](DEPLOY.md) for how it's hosted).
 
-- **Literature Review Agent** — searches PubMed (E-utilities), fetches abstracts,
-  embeds and indexes them in the vector store, then asks Claude to synthesize a
-  grounded summary, key findings, evidence level, and conclusions.
-- **Drug Discovery Agent** — pulls FDA label data (openFDA) and pharmacologically
-  related compounds (RxNorm/RxNav), then asks Claude to synthesize candidates and
-  a mechanism-of-action comparison.
-- **Clinical Trial Analyzer Agent** — queries ClinicalTrials.gov v2, aggregates
-  status/timeline stats directly, and asks Claude for a narrative trial summary
-  and patient population analysis.
-- **Citation Generator Agent** — formats references (from PubMed PMIDs or
-  supplied reference data) into APA, MLA, Vancouver, IEEE, or Nature style with
-  deduping and DOI links — pure formatting logic, no LLM call.
-- **Research Summarizer Agent** — asks Claude to summarize supplied text/documents
-  into an executive summary, one-page summary, key findings, and clinical
-  implications.
+Everything runs locally by default — LLM synthesis and embeddings go through
+a local [Ollama](https://ollama.com) server, no API key required. Set
+`LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` to use the hosted Claude API
+instead.
 
-The `ResearchPlanner` orchestrator runs the Literature Review Agent first and
-feeds its discovered PMIDs into the Citation Generator, then runs the remaining
-agents concurrently.
+## What's built
 
-Embeddings default to a dependency-free hash-based embedder so the app runs
-out of the box; set `EMBEDDING_PROVIDER=sentence_transformers` (and install the
-optional dependency) for production-quality biomedical embeddings. LLM calls
-default to a local [Ollama](https://ollama.com) server (`LLM_PROVIDER=ollama`,
-no API key needed — just `ollama serve` with a model pulled, e.g.
-`ollama pull llama3.2`). Set `LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY`
-to use the hosted Claude API instead.
+14 specialized agents plus an orchestrator, all wired to real data sources
+and an LLM (not mocked):
 
-Still missing: authentication, persisted report storage, document upload/OCR,
-and the frontend workspace views beyond the agent-status dashboard shell — see
-Next steps.
+- **Literature Review** — searches PubMed, embeds/indexes abstracts in the
+  vector store, asks the LLM for a grounded synthesis, evidence level, and
+  conclusions.
+- **Drug Discovery** — openFDA label data + RxNav-related compounds → LLM
+  candidate synthesis and mechanism-of-action comparison.
+- **Drug Safety** — openFDA label safety sections + FAERS adverse-event
+  counts → LLM safety profile (explicitly framed as unverified voluntary
+  reports, not established causation).
+- **Regulatory Intelligence** — openFDA approval history + recalls → LLM
+  regulatory summary.
+- **Clinical Trial Analyzer** — ClinicalTrials.gov v2 query + aggregated
+  stats → LLM trial summary and patient population analysis.
+- **Citation Generator** — APA/MLA/Vancouver/IEEE/Nature formatting from
+  PubMed PMIDs, deduped with DOI links — pure formatting, no LLM call.
+- **Research Summarizer** — LLM summary of supplied text into an executive
+  summary, one-page summary, key findings, and clinical implications.
+- **Document Q&A (RAG)** — PDF upload (PyMuPDF text extraction with a
+  RapidOCR fallback for scanned pages), chunked and embedded into Chroma,
+  answered with an LLM constrained to the retrieved excerpts.
+- **Research Paper Analyzer** — PMID or pasted text → structured 9-field
+  single-paper breakdown.
+- **Drug Interaction Checker** — cross-references two drugs' FDA label text
+  via the LLM (RxNav's structured interaction API was discontinued by NLM).
+- **Comparative Analysis** — side-by-side LLM comparison of 2-4 drugs'
+  labels.
+- **Knowledge Graph** — ChEMBL + ClinicalTrials.gov + PubMed → a real,
+  grounded drug/target/protein/gene/trial/paper graph. No LLM step.
+- **Web Search RAG** and **Points Summarizer** — Wikipedia/DuckDuckGo-grounded
+  Q&A and bullet-point summarization, surfaced through a floating widget
+  available on every page, not a dedicated panel.
+- **Evidence Synthesis** and **Citation Verification** — pipeline-only
+  stages that run over the orchestrator's combined output (see below), not
+  standalone agents.
 
-## Architecture
+The `ResearchPlanner` orchestrator (`/api/v1/research`) runs Literature
+Review first and feeds its discovered PMIDs into the Citation Generator,
+fans the remaining specialist agents out concurrently, then runs Evidence
+Synthesis and Citation Verification over the combined results. Any agent
+that fails is recorded in `failed_agents` rather than failing the whole
+request. The frontend's Research Dashboard panel runs this full pipeline
+and can export the report as Markdown.
 
-```
-User Query
-    │
-    ▼
-Research Planner (orchestrator)
-    │
-    ├── Literature Review Agent      (PubMed / PMC)
-    ├── Drug Discovery Agent          (DrugBank / ChEMBL)
-    ├── Clinical Trial Analyzer Agent (ClinicalTrials.gov)
-    ├── Citation Generator Agent      (APA / MLA / Vancouver / IEEE / Nature)
-    └── Research Summarizer Agent
-    │
-    ▼
-Medical Research Report
-```
+The frontend gives each of the 12 standalone agents its own panel, plus a
+live medical-news feed and an interactive knowledge-graph explorer.
+
+For the full request-flow diagrams, per-subsystem breakdowns, known
+limitations, and configuration reference, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
 ## Repository layout
 
 ```
-backend/            FastAPI application
+backend/                FastAPI application
   app/
-    agents/          BaseAgent + the 5 specialized agents + orchestrator
-    api/routes/       REST endpoints (health, research, literature, drugs, trials, citations)
-    core/config.py    Environment-driven settings
-    db/session.py     SQLAlchemy/Postgres session
-    models/schemas.py Pydantic request/response models
-    services/         LLM client, embeddings, citation formatting, vector store,
-                       external API clients (PubMed, ClinicalTrials.gov, openFDA, RxNorm)
+    agents/              BaseAgent + 14 agents + orchestrator.py (ResearchPlanner)
+    api/routes/          health, research, literature, drugs, safety, regulatory,
+                         trials, citations, summarize, documents, news,
+                         knowledge_graph, paper_analysis, interactions, comparative,
+                         rag_tool
+    core/config.py       Environment-driven settings (pydantic-settings)
+    db/session.py        SQLAlchemy/Postgres session — configured but unused
+    models/schemas.py    Pydantic request/response models
+    services/            LLM client, embeddings, vector store, citation
+                         formatting, external API clients (PubMed,
+                         ClinicalTrials.gov, openFDA, RxNav, ChEMBL, WHO RSS,
+                         Wikipedia/DuckDuckGo), PDF/OCR ingestion, TTL cache
   tests/
   requirements.txt
   Dockerfile
 
-frontend/            Vite + React dashboard shell
+frontend/                Vite + React dashboard
   src/
+    components/panels/   One panel per standalone agent + the Research Dashboard
+    components/          Sidebar, PanelShell, NewsFeed, GlobalRagWidget, ...
+    api.ts                Typed fetch client
   index.html
 
-docker-compose.yml   backend + frontend + postgres
-.github/workflows/   CI (backend tests, frontend build)
+docker-compose.yml        Local dev: backend + frontend + postgres (expects
+                          `ollama serve` on the host)
+docker-compose.prod.yml   Self-contained prod stack: + ollama + Caddy, no host deps
+Caddyfile                 Reverse proxy / TLS config for the prod stack
+.github/workflows/ci.yml  CI: backend tests, frontend build
+ARCHITECTURE.md           Deep-dive: diagrams, subsystem details, limitations
+DEPLOY.md                 How the live deployment is run, redeployed, and torn down
 ```
 
 ## Running locally
@@ -91,6 +112,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ollama serve &   # if not already running
 ollama pull llama3.2
+ollama pull nomic-embed-text
 uvicorn app.main:app --reload
 ```
 
@@ -109,17 +131,21 @@ Dashboard available at `http://localhost:3000`. The frontend is a plain
 Vite + React app — it calls the backend directly (`VITE_BACKEND_URL`, CORS
 enabled on the backend) rather than going through a server-side proxy.
 
-### Docker Compose
+### Docker Compose (local dev)
 
 ```bash
 docker compose up --build
 ```
 
-## Next steps
+This expects `ollama serve` running on your host (reached via
+`host.docker.internal`). It is a separate, unrelated flow from
+`docker-compose.prod.yml`, which runs Ollama as its own container — see
+[DEPLOY.md](DEPLOY.md).
 
-- Add authentication (OAuth2/JWT) to protected routes.
-- Add SQLAlchemy models + migrations for persisted research reports.
-- Add document ingestion pipeline (PDF parsing, OCR, chunking) feeding the vector store.
-- Build out dashboard views for literature review, trial explorer, and citation manager
-  (the current frontend is a status shell, not yet wired to the research endpoints).
-- Swap the default hash embedder for `sentence_transformers` (PubMedBERT/BioBERT) in production.
+## Known limitations
+
+No authentication, no persisted report storage (results are lost on
+refresh — `db/session.py` is configured but no route uses it), and the
+default embedder/LLM are local Ollama models rather than a
+production-tuned biomedical model. Full list with rationale in
+[ARCHITECTURE.md §16](ARCHITECTURE.md#16-known-limitations).
