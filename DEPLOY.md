@@ -29,9 +29,8 @@ persistence (see ARCHITECTURE.md §16).
 Every push to `main` runs `.github/workflows/ci.yml`: backend tests +
 frontend build, then (only if both pass) a `deploy` job that packages and
 redeploys this same VM — the automated version of the manual steps below.
-The deploy job sits behind a `production` GitHub Environment, so it pauses
-for a manual approval click in the Actions UI before it touches anything;
-CI on pull requests never reaches this job (`if: github.ref == 'refs/heads/main'`).
+The deploy job runs automatically, with no manual approval step; CI on pull
+requests never reaches this job (`if: github.ref == 'refs/heads/main'`).
 
 One-time setup (do this once, from a machine with `gcloud` already
 authenticated to the `ai-medresearch-7569` project):
@@ -68,14 +67,13 @@ authenticated to the `ai-medresearch-7569` project):
    paste the entire contents of `gh-actions-deploy-key.json` as the value.
 
 4. **Create the `production` environment**: Settings → Environments → New
-   environment → name it exactly `production` → add yourself (or whoever
-   should approve prod deploys) under "Required reviewers". Without this,
-   referencing `environment: production` in the workflow still works, but
-   with no protection rule the job runs immediately on every push to main —
-   the reviewer step is what makes deploys pause for approval.
+   environment → name it exactly `production`. Leave it with no protection
+   rules — `environment: production` in the workflow is only used to scope
+   the `GCP_SA_KEY` secret, so with no rule configured the job runs
+   immediately on every push to main.
 
-After that, deploying is just: merge to `main`, wait for the `backend` and
-`frontend` checks, then approve the `deploy` job when GitHub prompts.
+After that, deploying is just: merge to `main` and wait — `backend`,
+`frontend`, then `deploy` run automatically with no manual step.
 
 ## Redeploying manually (fallback / for local testing)
 

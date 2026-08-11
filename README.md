@@ -103,8 +103,8 @@ docker-compose.yml        Local dev: backend + frontend + postgres (expects
 docker-compose.prod.yml   Self-contained prod stack: + ollama + postgres + Caddy, no host deps
 Caddyfile                 Reverse proxy / TLS config for the prod stack
 .github/workflows/ci.yml  CI (backend tests, frontend build) + CD (auto-
-                          redeploys the live VM on main, gated by a manual
-                          approval — see DEPLOY.md)
+                          redeploys the live VM automatically on main —
+                          see DEPLOY.md)
 ARCHITECTURE.md           Deep-dive: diagrams, subsystem details, limitations
 DEPLOY.md                 How the live deployment is run, redeployed, and torn down
 ```

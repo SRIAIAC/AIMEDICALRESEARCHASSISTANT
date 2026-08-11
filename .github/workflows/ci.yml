@@ -42,11 +42,11 @@ jobs:
       - run: npm run build
 
   # Redeploys the live VM (see DEPLOY.md) with whatever just passed CI on
-  # main. Requires the `production` GitHub Environment to exist (Settings ->
-  # Environments) with required reviewers configured there - the job pauses
-  # for approval before it touches the VM. Also requires the GCP_SA_KEY
-  # secret (see DEPLOY.md's "Continuous deployment" section for how to
-  # create the service account and grant it the two roles this needs).
+  # main. Runs automatically on every push to main - no manual approval
+  # gate. Requires the `production` GitHub Environment to exist (Settings ->
+  # Environments) with no required reviewers, and the GCP_SA_KEY secret (see
+  # DEPLOY.md's "Continuous deployment" section for how to create the
+  # service account and grant it the two roles this needs).
   deploy:
     needs: [backend, frontend]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
